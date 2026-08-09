@@ -1,0 +1,11 @@
+{
+  "_note": "Demo tenant store only. In production, replace with a real database + Stripe billing (see README 'Subscription / SaaS roadmap'). Usage counts reset only on process restart.",
+  "tenants": {
+    "demo-key-123": {
+      "name": "Demo Insurance Co",
+      "plan": "trial",
+      "monthly_quota": 50,
+      "usage_this_period": 0
+    }
+  }
+}
