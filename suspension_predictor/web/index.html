@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Suspension Damage Predictor</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>Suspension Damage Predictor</h1>
+  <p class="tagline">Enter a wheel alignment sheet (camber / caster / SAI / toe) and get a ranked, explainable list
+  of suspected damaged or worn suspension components.</p>
+</header>
+
+<main>
+  <form id="reading-form">
+    <fieldset>
+      <legend>API access</legend>
+      <label>API Key
+        <input type="text" id="api-key" value="demo-key-123" required>
+      </label>
+      <small>Demo key included for evaluation. Each successful prediction counts against the tenant's monthly quota.</small>
+    </fieldset>
+
+    <fieldset>
+      <legend>Vehicle (optional — enables spec auto-fill from the seed catalog)</legend>
+      <div class="row">
+        <label>Year <input type="number" id="veh-year" placeholder="2022"></label>
+        <label>Make <input type="text" id="veh-make" placeholder="Toyota"></label>
+        <label>Model <input type="text" id="veh-model" placeholder="Camry"></label>
+        <label>Claim # <input type="text" id="veh-claim" placeholder="optional"></label>
+      </div>
+      <button type="button" id="autofill-btn">Auto-fill spec from vehicle</button>
+      <span id="autofill-status"></span>
+    </fieldset>
+
+    <fieldset>
+      <legend>Front axle — measured</legend>
+      <table class="grid">
+        <thead><tr><th></th><th>Camber (°)</th><th>Caster (°)</th><th>SAI (°)</th><th>Toe (°)</th></tr></thead>
+        <tbody>
+          <tr><th>Left</th>
+            <td><input type="number" step="0.01" id="fl-camber" required></td>
+            <td><input type="number" step="0.01" id="fl-caster"></td>
+            <td><input type="number" step="0.01" id="fl-sai"></td>
+            <td><input type="number" step="0.01" id="fl-toe" required></td>
+          </tr>
+          <tr><th>Right</th>
+            <td><input type="number" step="0.01" id="fr-camber" required></td>
+            <td><input type="number" step="0.01" id="fr-caster"></td>
+            <td><input type="number" step="0.01" id="fr-sai"></td>
+            <td><input type="number" step="0.01" id="fr-toe" required></td>
+          </tr>
+        </tbody>
+      </table>
+    </fieldset>
+
+    <fieldset>
+      <legend>Front axle — OEM spec (from the alignment printout)</legend>
+      <table class="grid">
+        <thead><tr><th></th><th>Min</th><th>Max</th></tr></thead>
+        <tbody>
+          <tr><th>Camber</th><td><input type="number" step="0.01" id="fs-camber-min" required></td><td><input type="number" step="0.01" id="fs-camber-max" required></td></tr>
+          <tr><th>Caster</th><td><input type="number" step="0.01" id="fs-caster-min"></td><td><input type="number" step="0.01" id="fs-caster-max"></td></tr>
+          <tr><th>SAI</th><td><input type="number" step="0.01" id="fs-sai-min"></td><td><input type="number" step="0.01" id="fs-sai-max"></td></tr>
+          <tr><th>Toe</th><td><input type="number" step="0.01" id="fs-toe-min" required></td><td><input type="number" step="0.01" id="fs-toe-max" required></td></tr>
+        </tbody>
+      </table>
+    </fieldset>
+
+    <fieldset>
+      <legend><label><input type="checkbox" id="include-rear"> Include rear axle</label></legend>
+      <div id="rear-block" hidden>
+        <table class="grid">
+          <thead><tr><th></th><th>Camber (°)</th><th>Toe (°)</th></tr></thead>
+          <tbody>
+            <tr><th>Left (measured)</th><td><input type="number" step="0.01" id="rl-camber"></td><td><input type="number" step="0.01" id="rl-toe"></td></tr>
+            <tr><th>Right (measured)</th><td><input type="number" step="0.01" id="rr-camber"></td><td><input type="number" step="0.01" id="rr-toe"></td></tr>
+          </tbody>
+        </table>
+        <table class="grid">
+          <thead><tr><th>Spec</th><th>Min</th><th>Max</th></tr></thead>
+          <tbody>
+            <tr><th>Camber</th><td><input type="number" step="0.01" id="rs-camber-min"></td><td><input type="number" step="0.01" id="rs-camber-max"></td></tr>
+            <tr><th>Toe</th><td><input type="number" step="0.01" id="rs-toe-min"></td><td><input type="number" step="0.01" id="rs-toe-max"></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </fieldset>
+
+    <button type="submit" id="submit-btn">Predict suspension damage</button>
+  </form>
+
+  <section id="result" hidden>
+    <h2>Diagnostic report</h2>
+    <p id="summary" class="summary"></p>
+    <div id="structural" class="structural-flag" hidden></div>
+    <div id="findings"></div>
+    <p class="disclaimer" id="disclaimer"></p>
+  </section>
+
+  <div id="error-box" class="error" hidden></div>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>

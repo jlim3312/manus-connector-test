@@ -1,0 +1,55 @@
+{
+  "_disclaimer": "ILLUSTRATIVE SEED DATA ONLY. These ranges are representative examples for common vehicle classes and are NOT guaranteed to match the exact OEM specification for any specific model year/trim. Always prefer the spec range printed on the actual alignment machine printout for the vehicle being inspected -- pass it in the request instead of relying on this lookup. Verify any value used here against an authoritative OEM source (e.g. Mitchell1, ALLDATA, factory service manual) before relying on it for a claims decision.",
+  "vehicles": [
+    {
+      "make": "Toyota", "model": "Camry", "year_min": 2018, "year_max": 2026,
+      "front": {"camber": [-1.0, 0.5, -0.25], "caster": [3.7, 5.2, 4.45], "toe": [-0.08, 0.08, 0.0], "sai": [12.5, 14.5, 13.5]},
+      "rear":  {"camber": [-1.5, 0.0, -0.75], "toe": [0.02, 0.28, 0.15]}
+    },
+    {
+      "make": "Honda", "model": "Accord", "year_min": 2018, "year_max": 2026,
+      "front": {"camber": [-1.0, 0.5, -0.25], "caster": [6.0, 8.0, 7.0], "toe": [-0.06, 0.06, 0.0], "sai": [13.0, 15.0, 14.0]},
+      "rear":  {"camber": [-1.75, -0.25, -1.0], "toe": [0.03, 0.23, 0.13]}
+    },
+    {
+      "make": "Toyota", "model": "RAV4", "year_min": 2019, "year_max": 2026,
+      "front": {"camber": [-1.2, 0.3, -0.45], "caster": [2.7, 4.2, 3.45], "toe": [-0.08, 0.08, 0.0], "sai": [12.0, 14.0, 13.0]},
+      "rear":  {"camber": [-1.5, 0.0, -0.75], "toe": [0.0, 0.3, 0.15]}
+    },
+    {
+      "make": "Honda", "model": "CR-V", "year_min": 2017, "year_max": 2026,
+      "front": {"camber": [-1.0, 0.5, -0.25], "caster": [7.0, 9.0, 8.0], "toe": [-0.06, 0.06, 0.0], "sai": [13.0, 15.0, 14.0]},
+      "rear":  {"camber": [-1.6, -0.1, -0.85], "toe": [0.03, 0.23, 0.13]}
+    },
+    {
+      "make": "Ford", "model": "F-150", "year_min": 2015, "year_max": 2026,
+      "front": {"camber": [-0.75, 0.75, 0.0], "caster": [3.5, 5.5, 4.5], "toe": [-0.1, 0.1, 0.0], "sai": [12.5, 14.5, 13.5]},
+      "rear":  null
+    },
+    {
+      "make": "Chevrolet", "model": "Silverado 1500", "year_min": 2019, "year_max": 2026,
+      "front": {"camber": [-0.7, 0.7, 0.0], "caster": [2.5, 4.5, 3.5], "toe": [-0.1, 0.1, 0.0], "sai": [12.0, 14.0, 13.0]},
+      "rear":  null
+    },
+    {
+      "make": "Tesla", "model": "Model 3", "year_min": 2018, "year_max": 2026,
+      "front": {"camber": [-1.1, -0.1, -0.6], "caster": [7.0, 9.0, 8.0], "toe": [-0.05, 0.05, 0.0], "sai": [12.5, 14.5, 13.5]},
+      "rear":  {"camber": [-1.3, -0.3, -0.8], "toe": [0.05, 0.25, 0.15]}
+    },
+    {
+      "make": "Ford", "model": "Explorer", "year_min": 2020, "year_max": 2026,
+      "front": {"camber": [-1.1, 0.4, -0.35], "caster": [5.0, 7.0, 6.0], "toe": [-0.08, 0.08, 0.0], "sai": [12.5, 14.5, 13.5]},
+      "rear":  {"camber": [-1.6, -0.1, -0.85], "toe": [0.0, 0.25, 0.13]}
+    },
+    {
+      "make": "Nissan", "model": "Altima", "year_min": 2019, "year_max": 2026,
+      "front": {"camber": [-1.15, 0.35, -0.4], "caster": [5.0, 6.8, 5.9], "toe": [-0.08, 0.08, 0.0], "sai": [12.5, 14.5, 13.5]},
+      "rear":  {"camber": [-1.5, 0.0, -0.75], "toe": [0.03, 0.23, 0.13]}
+    },
+    {
+      "make": "Subaru", "model": "Outback", "year_min": 2020, "year_max": 2026,
+      "front": {"camber": [-1.15, 0.35, -0.4], "caster": [4.6, 6.6, 5.6], "toe": [-0.08, 0.08, 0.0], "sai": [12.5, 14.5, 13.5]},
+      "rear":  {"camber": [-1.5, -0.1, -0.8], "toe": [0.03, 0.23, 0.13]}
+    }
+  ]
+}
