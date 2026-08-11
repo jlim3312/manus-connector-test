@@ -18,6 +18,9 @@ reel_toolkit/
                    filter graph and command
   pipeline.py       Batch runner: one JSON config -> split + edit every clip -> manifest.json
   cli.py            `python -m reel_toolkit.cli ...`
+  webapp/
+    main.py         FastAPI backend for a local drag-and-drop web UI
+    static/index.html  The drag-and-drop page itself (upload, form, results)
   content/
     filming_playbook.md   Content pillars, 7 ready-to-shoot scripts (hook / shot
                            list / captions / audio / CTA), filming technical
@@ -30,6 +33,31 @@ Content pillars and shot-by-shot scripts written for the shop's actual
 subject matter (collision repair, paintless dent removal, paint booth,
 customer reveals) live in **[`content/filming_playbook.md`](content/filming_playbook.md)** --
 read that first if you're the one filming/posting, not writing code.
+
+## Drag-and-drop web UI (no command line needed after setup)
+
+For anyone on the team who'd rather not touch a terminal, there's a local
+web app: drop in a video, fill in a short form (captions, logo, music,
+how to cut it), click **Process video**, then preview and download the
+finished Reels right in the browser.
+
+```bash
+pip install -r requirements.txt          # fastapi/uvicorn, from repo root
+uvicorn reel_toolkit.webapp.main:app --reload --port 8000
+```
+
+Then open **http://127.0.0.1:8000** in a browser. One person needs to run
+that one command (leave the terminal window open while it's in use) --
+after that, everyone on that machine/network can use the web page.
+
+Notes:
+- This is a **local** tool, not something to expose on the open internet
+  as-is -- there's no login and no upload size limit.
+- Output for each run lands in `reel_toolkit/webapp/jobs/<job_id>/final/`
+  (gitignored) as well as being downloadable from the page.
+- Same engine as the CLI underneath -- anything the web UI can't do
+  (scene-detection auto cut suggestions, batch project configs) is still
+  available via `reel_toolkit.cli`.
 
 ## Requirements
 

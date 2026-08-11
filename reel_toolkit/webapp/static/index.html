@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reel Toolkit</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --panel: #ffffff;
+    --border: #d9dce1;
+    --text: #1c1f24;
+    --muted: #6b7280;
+    --accent: #d6482b;
+    --accent-hover: #b93a20;
+    --ok: #1f8a4c;
+    --err: #c0362c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    padding: 28px 24px 10px;
+    max-width: 880px;
+    margin: 0 auto;
+  }
+  header h1 { margin: 0 0 4px; font-size: 1.5rem; }
+  header p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+  main {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 16px 24px 64px;
+    display: grid;
+    gap: 20px;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .panel h2 {
+    margin: 0 0 14px;
+    font-size: 1.05rem;
+  }
+  #dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 36px 16px;
+    text-align: center;
+    cursor: pointer;
+    color: var(--muted);
+    transition: border-color 0.15s, background 0.15s;
+  }
+  #dropzone.drag { border-color: var(--accent); background: #fdf1ee; color: var(--text); }
+  #dropzone strong { color: var(--text); }
+  #fileName { margin-top: 10px; font-size: 0.9rem; color: var(--text); font-weight: 600; }
+  .grid2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field.full { grid-column: 1 / -1; }
+  label { font-size: 0.85rem; font-weight: 600; color: var(--text); }
+  .hint { font-size: 0.78rem; color: var(--muted); font-weight: 400; }
+  input[type=text], input[type=number], select, textarea {
+    padding: 9px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.92rem;
+    font-family: inherit;
+    background: #fff;
+    color: var(--text);
+  }
+  textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monospace; font-size: 0.85rem; }
+  input[type=file] { font-size: 0.85rem; }
+  fieldset { border: none; padding: 0; margin: 0 0 14px; }
+  .radio-row { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 4px; }
+  .radio-row label { font-weight: 500; display: flex; align-items: center; gap: 6px; }
+  #submitBtn {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 12px 22px;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  #submitBtn:hover { background: var(--accent-hover); }
+  #submitBtn:disabled { background: #cbb; cursor: not-allowed; opacity: 0.7; }
+  #status { margin-top: 14px; font-size: 0.9rem; }
+  #status.ok { color: var(--ok); }
+  #status.err { color: var(--err); }
+  .spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid #ddd;
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    vertical-align: -2px;
+    margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #results { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  .clip-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    background: #fafafa;
+  }
+  .clip-card video { width: 100%; display: block; background: #000; aspect-ratio: 9/16; }
+  .clip-card .meta { padding: 8px 10px; font-size: 0.82rem; }
+  .clip-card .meta .label { font-weight: 600; }
+  .clip-card a.dl {
+    display: block;
+    text-align: center;
+    padding: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--accent);
+    text-decoration: none;
+    border-top: 1px solid var(--border);
+  }
+  .clip-card a.dl:hover { background: #f2f2f2; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎬 Reel Toolkit</h1>
+  <p>Drop in raw shop footage, add captions/logo/music, get Reels-ready vertical clips out.</p>
+</header>
+
+<main>
+  <form id="processForm">
+    <div class="panel">
+      <h2>1. Video</h2>
+      <div id="dropzone">
+        <div>Drag &amp; drop a video here, or <strong>click to browse</strong></div>
+        <div id="fileName">No file selected</div>
+      </div>
+      <input type="file" id="videoFile" accept="video/*" style="display:none">
+    </div>
+
+    <div class="panel">
+      <h2>2. How to cut it</h2>
+      <fieldset>
+        <div class="radio-row">
+          <label><input type="radio" name="cutMode" value="whole" checked> Whole video as one Reel</label>
+          <label><input type="radio" name="cutMode" value="auto"> Auto-split into equal segments</label>
+          <label><input type="radio" name="cutMode" value="manual"> Manual timestamps</label>
+        </div>
+      </fieldset>
+      <div class="field" id="autoSegmentField" style="display:none; max-width: 240px;">
+        <label>Segment length (seconds)</label>
+        <input type="number" id="segmentSeconds" value="45" min="5" max="90">
+      </div>
+      <div class="field" id="manualCutsField" style="display:none;">
+        <label>Cut list <span class="hint">one per line: <code>start-end label</code>, e.g. <code>0:00-0:45 Hook and teardown</code></span></label>
+        <textarea id="manualCuts" placeholder="0:00-0:45 Hook and teardown&#10;0:45-1:20 Paint booth&#10;1:20-1:45 Reveal"></textarea>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>3. Captions &amp; branding</h2>
+      <div class="grid2">
+        <div class="field full">
+          <label>Top caption <span class="hint">the hook -- shown for the whole clip</span></label>
+          <input type="text" id="captionTop" placeholder="They said it was totaled...">
+        </div>
+        <div class="field full">
+          <label>Bottom caption <span class="hint">usually your call to action</span></label>
+          <input type="text" id="captionBottom" placeholder="Free estimates -- link in bio">
+        </div>
+        <div class="field">
+          <label>Logo / watermark <span class="hint">PNG, transparent background works best</span></label>
+          <input type="file" id="watermarkFile" accept="image/*">
+        </div>
+        <div class="field">
+          <label>Logo position</label>
+          <select id="watermarkPosition">
+            <option value="bottom_right" selected>Bottom right</option>
+            <option value="bottom_left">Bottom left</option>
+            <option value="top_right">Top right</option>
+            <option value="top_left">Top left</option>
+            <option value="center">Center</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Background music</label>
+          <input type="file" id="musicFile" accept="audio/*">
+        </div>
+        <div class="field">
+          <label>Music volume (dB) <span class="hint">more negative = quieter</span></label>
+          <input type="number" id="musicVolume" value="-18" step="1">
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>4. Frame &amp; length</h2>
+      <div class="grid2">
+        <div class="field">
+          <label>Fit mode</label>
+          <select id="fitMode">
+            <option value="crop" selected>Crop to fill vertical frame</option>
+            <option value="pad">Fit whole frame (blurred background)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Max duration (seconds)</label>
+          <input type="number" id="maxDuration" value="60" min="3" max="90">
+        </div>
+      </div>
+    </div>
+
+    <button id="submitBtn" type="submit">Process video</button>
+    <div id="status"></div>
+  </form>
+
+  <div class="panel" id="resultsPanel" style="display:none;">
+    <h2>Finished clips</h2>
+    <div id="results"></div>
+  </div>
+</main>
+
+<script>
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('videoFile');
+  const fileNameEl = document.getElementById('fileName');
+  let selectedFile = null;
+
+  function setFile(file) {
+    selectedFile = file;
+    fileNameEl.textContent = file ? `${file.name} (${(file.size / 1e6).toFixed(1)} MB)` : 'No file selected';
+  }
+
+  dropzone.addEventListener('click', () => fileInput.click());
+  dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+  dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('drag');
+    if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length) setFile(fileInput.files[0]);
+  });
+
+  document.querySelectorAll('input[name=cutMode]').forEach((el) => {
+    el.addEventListener('change', () => {
+      const mode = document.querySelector('input[name=cutMode]:checked').value;
+      document.getElementById('autoSegmentField').style.display = mode === 'auto' ? 'block' : 'none';
+      document.getElementById('manualCutsField').style.display = mode === 'manual' ? 'block' : 'none';
+    });
+  });
+
+  function setStatus(msg, state) {
+    const el = document.getElementById('status');
+    el.className = state || '';
+    el.innerHTML = state === 'busy' ? `<span class="spinner"></span>${msg}` : msg;
+  }
+
+  function renderResults(clips) {
+    const panel = document.getElementById('resultsPanel');
+    const container = document.getElementById('results');
+    container.innerHTML = '';
+    clips.forEach((clip) => {
+      const card = document.createElement('div');
+      card.className = 'clip-card';
+      card.innerHTML = `
+        <video src="${clip.url}" controls preload="metadata"></video>
+        <div class="meta"><span class="label">${clip.label}</span> -- ${clip.duration}s</div>
+        <a class="dl" href="${clip.url}" download>Download</a>
+      `;
+      container.appendChild(card);
+    });
+    panel.style.display = clips.length ? 'block' : 'none';
+  }
+
+  document.getElementById('processForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!selectedFile) {
+      setStatus('Drop or choose a video first.', 'err');
+      return;
+    }
+    const form = new FormData();
+    form.append('video', selectedFile);
+    form.append('cut_mode', document.querySelector('input[name=cutMode]:checked').value);
+    form.append('segment_seconds', document.getElementById('segmentSeconds').value);
+    form.append('manual_cuts', document.getElementById('manualCuts').value);
+    form.append('caption_top', document.getElementById('captionTop').value);
+    form.append('caption_bottom', document.getElementById('captionBottom').value);
+    form.append('fit_mode', document.getElementById('fitMode').value);
+    form.append('max_duration', document.getElementById('maxDuration').value);
+    form.append('watermark_position', document.getElementById('watermarkPosition').value);
+    form.append('music_volume_db', document.getElementById('musicVolume').value);
+    const wmFile = document.getElementById('watermarkFile').files[0];
+    if (wmFile) form.append('watermark', wmFile);
+    const musicFile = document.getElementById('musicFile').files[0];
+    if (musicFile) form.append('music', musicFile);
+
+    document.getElementById('submitBtn').disabled = true;
+    setStatus('Processing... this can take a minute or two depending on video length.', 'busy');
+
+    try {
+      const res = await fetch('/api/process', { method: 'POST', body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Processing failed.');
+      renderResults(data.clips);
+      setStatus(`Done -- ${data.clips.length} clip(s) ready below.`, 'ok');
+    } catch (err) {
+      setStatus('Error: ' + err.message, 'err');
+    } finally {
+      document.getElementById('submitBtn').disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
