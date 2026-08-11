@@ -366,6 +366,43 @@ def test_build_edit_cmd_with_music_builds_amix_and_maps_music_input():
     assert "[aout]" in cmd
 
 
+def test_build_edit_cmd_with_music_and_loudnorm_chains_inside_filter_complex_not_af():
+    """Regression test: normalize_loudness defaults to True, and ffmpeg
+    rejects a simple -af filter applied to a stream that's the output of a
+    complex filtergraph ("Simple and complex filtering cannot be used
+    together for the same stream") -- confirmed against the real ffmpeg
+    binary. Whenever music is mixed in (audio goes through amix in
+    filter_complex), loudnorm must be chained onto that amix output
+    instead of appended as a separate -af.
+    """
+    opts = EditOptions(fade_seconds=0, music_path="music.mp3")  # normalize_loudness defaults True
+    cmd = build_edit_cmd("in.mp4", "out.mp4", opts, clip_duration=30)
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert "loudnorm=" in fc
+    assert fc.count("amix") == 1
+    assert "-af" not in cmd, "a simple -af filter can't coexist with a complex-filtergraph-sourced audio stream"
+
+
+def test_build_edit_cmd_with_music_and_loudness_normalize_disabled_has_no_loudnorm_anywhere():
+    opts = EditOptions(fade_seconds=0, music_path="music.mp3", normalize_loudness=False)
+    cmd = build_edit_cmd("in.mp4", "out.mp4", opts, clip_duration=30)
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert "loudnorm" not in fc
+    assert "-af" not in cmd
+
+
+def test_build_edit_cmd_without_music_still_uses_af_for_loudnorm():
+    """No music -> audio is a plain mapped input stream (not complex-filter
+    output), so -af works fine and is the simpler path -- this must keep
+    working exactly as before."""
+    opts = EditOptions(fade_seconds=0, captions=[CaptionSpec(text="hook", position="top")])
+    cmd = build_edit_cmd("in.mp4", "out.mp4", opts, clip_duration=30, caption_image_paths=["cap0.png"])
+    assert "-af" in cmd
+    assert cmd[cmd.index("-af") + 1] == "loudnorm=I=-14:TP=-1.5:LRA=11"
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert "loudnorm" not in fc
+
+
 def test_build_edit_cmd_with_watermark_and_music_together():
     opts = EditOptions(
         fade_seconds=0,

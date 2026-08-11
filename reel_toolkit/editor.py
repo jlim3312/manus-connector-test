@@ -179,15 +179,26 @@ def build_edit_cmd(
     filter_complex_pieces = [graph] if uses_filter_complex else []
     video_map = "[vout]" if uses_filter_complex else None
 
+    # loudnorm can't be bolted on as a simple -af filter once the audio
+    # stream is itself the output of a complex filtergraph (ffmpeg: "Simple
+    # and complex filtering cannot be used together for the same stream")
+    # -- that only happens when music is mixed in (amix runs in
+    # filter_complex). Chain loudnorm onto the amix output there instead;
+    # otherwise (no music) the audio is a plain mapped input stream and
+    # -af works as normal.
+    loudnorm = "loudnorm=I=-14:TP=-1.5:LRA=11"
+    audio_normalized_in_graph = False
     if opts.music_path:
         orig_audio_label = "[0:a]"
         if opts.duck_original_audio_db:
             filter_complex_pieces.append(f"[0:a]volume={opts.duck_original_audio_db}dB[a0]")
             orig_audio_label = "[a0]"
         filter_complex_pieces.append(f"[{music_input_idx}:a]volume={opts.music_volume_db}dB[am]")
-        filter_complex_pieces.append(
-            f"{orig_audio_label}[am]amix=inputs=2:duration=first:dropout_transition=2[aout]"
-        )
+        amix = f"{orig_audio_label}[am]amix=inputs=2:duration=first:dropout_transition=2"
+        if opts.normalize_loudness:
+            amix += f",{loudnorm}"
+            audio_normalized_in_graph = True
+        filter_complex_pieces.append(f"{amix}[aout]")
         audio_map = "[aout]"
     else:
         audio_map = "0:a?"
@@ -201,8 +212,8 @@ def build_edit_cmd(
         cmd += ["-vf", graph]
         cmd += ["-map", "0:v", "-map", "0:a?"]
 
-    if opts.normalize_loudness:
-        cmd += ["-af", "loudnorm=I=-14:TP=-1.5:LRA=11"]
+    if opts.normalize_loudness and not audio_normalized_in_graph:
+        cmd += ["-af", loudnorm]
 
     if opts.max_duration:
         cmd += ["-t", f"{opts.max_duration:.3f}"]
