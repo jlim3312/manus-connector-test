@@ -226,6 +226,25 @@ def test_process_rejects_upload_that_is_too_short():
     assert "0.04s" in res.json()["detail"]
 
 
+def test_process_gives_friendly_message_when_file_is_unreadable():
+    """A truncated/incomplete upload (e.g. an iCloud placeholder that
+    hasn't fully downloaded) makes ffprobe itself fail with something like
+    'moov atom not found' -- that should surface as a plain-English 400,
+    not the raw ffmpeg stderr dump.
+    """
+    with patch.object(ffmpeg_utils, "require_ffmpeg"), \
+         patch.object(ffmpeg_utils, "probe", side_effect=ffmpeg_utils.FfmpegError("moov atom not found")):
+        res = client.post(
+            "/api/process",
+            data={"cut_mode": "whole"},
+            files={"video": ("clip.mov", io.BytesIO(b"x"), "video/quicktime")},
+        )
+    assert res.status_code == 400
+    detail = res.json()["detail"].lower()
+    assert "incomplete or corrupted" in detail
+    assert "icloud" in detail
+
+
 def test_uploaded_filenames_are_sanitized(mocked_ffmpeg, tmp_path):
     res = client.post(
         "/api/process",

@@ -116,7 +116,18 @@ async def process(
 
     try:
         probe = ffmpeg_utils.probe(str(video_path))
+    except ffmpeg_utils.FfmpegError:
+        raise HTTPException(
+            400,
+            f"Couldn't read '{video.filename}' as a video -- the file looks incomplete or corrupted, not just "
+            "the wrong type. This is common when dragging a video straight out of the Photos app if the "
+            "original is stored in iCloud and hasn't fully downloaded to this Mac yet. Try: open the video in "
+            "Photos or QuickTime Player first and confirm it actually plays, then in Photos use "
+            "File > Export > Export Unmodified Original to save a real copy to your Desktop, and drop that "
+            "exported file in instead.",
+        )
 
+    try:
         if probe.width == 0 or probe.height == 0:
             raise HTTPException(
                 400,
