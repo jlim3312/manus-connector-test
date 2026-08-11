@@ -1,25 +1,24 @@
 """Turn a cut clip into a publish-ready vertical Reel.
 
-Applies, in order: crop/pad to 9:16, fade in/out, caption text burn-in,
-logo watermark, loudness normalization, and an optional background music
-mix -- then clamps to Instagram's Reels duration window.
+Applies, in order: crop/pad to 9:16, fade in/out, caption overlay(s), logo
+watermark, loudness normalization, and an optional background music mix --
+then clamps to Instagram's Reels duration window.
+
+Captions are rendered to PNGs with Pillow (see caption_render.py) and
+composited with ffmpeg's `overlay` filter rather than drawtext -- drawtext
+requires ffmpeg to have been compiled with libfreetype, which isn't a safe
+assumption across every ffmpeg install (notably Homebrew's default
+`ffmpeg` formula on macOS ships without it).
 """
 from __future__ import annotations
 
 import os
+import tempfile
 from typing import List, Optional
 
 from . import ffmpeg_utils
-from .models import CaptionSpec, Clip, EditOptions, WatermarkSpec
-
-
-def _escape_drawtext(text: str) -> str:
-    # ffmpeg drawtext treats : and \ and ' and % specially inside the filter string.
-    text = text.replace("\\", "\\\\")
-    text = text.replace(":", "\\:")
-    text = text.replace("'", r"\'")
-    text = text.replace("%", "\\%")
-    return text
+from .caption_render import render_caption_png
+from .models import Clip, EditOptions
 
 
 def _scale_crop_filter(target_w: int, target_h: int) -> str:
@@ -47,17 +46,6 @@ def _scale_pad_filter(target_w: int, target_h: int) -> str:
     )
 
 
-def _caption_filter(caption: CaptionSpec) -> str:
-    y = f"{caption.margin_px}" if caption.position == "top" else f"h-text_h-{caption.margin_px}"
-    font_arg = f"fontfile='{caption.font_path}':" if caption.font_path else ""
-    text = _escape_drawtext(caption.text)
-    return (
-        f"drawtext={font_arg}text='{text}':fontcolor={caption.font_color}:"
-        f"fontsize={caption.font_size}:box=1:boxcolor={caption.box_color}:"
-        f"boxborderw=20:x=(w-text_w)/2:y={y}:line_spacing=6"
-    )
-
-
 _POSITION_EXPR = {
     "top_left": "{margin}:{margin}",
     "top_right": "W-w-{margin}:{margin}",
@@ -68,7 +56,7 @@ _POSITION_EXPR = {
 
 
 def _video_chain(opts: EditOptions, clip_duration: Optional[float]) -> List[str]:
-    """The ordered list of video filters, before any watermark overlay."""
+    """The base scale/crop-or-pad + fade filters, before any overlays."""
     chain = [_scale_crop_filter(opts.target_width, opts.target_height)
              if opts.fit_mode == "crop"
              else _scale_pad_filter(opts.target_width, opts.target_height)]
@@ -80,42 +68,58 @@ def _video_chain(opts: EditOptions, clip_duration: Optional[float]) -> List[str]
             out_start = max(0.0, effective_duration - opts.fade_seconds)
             chain.append(f"fade=t=out:st={out_start:.3f}:d={opts.fade_seconds}")
 
-    for caption in opts.captions:
-        chain.append(_caption_filter(caption))
-
     return chain
 
 
-def build_filter_graph(opts: EditOptions, clip_duration: Optional[float] = None) -> tuple:
+def build_filter_graph(
+    opts: EditOptions,
+    clip_duration: Optional[float] = None,
+    caption_image_paths: Optional[List[str]] = None,
+) -> tuple:
     """Return (graph: str, uses_filter_complex: bool, extra_video_inputs: List[str]).
 
-    Pure string-building, no subprocess -- unit-testable without ffmpeg
-    installed. `clip_duration`, if known, lets the fade-out land at the
-    right timestamp instead of always assuming full clip length.
+    `caption_image_paths` are pre-rendered, full-frame-sized transparent
+    PNGs (see caption_render.render_caption_png), one per opts.captions
+    entry, already positioned internally -- so each is just composited
+    with a plain `overlay=0:0`. Watermark keeps its own scale/opacity/
+    corner-position handling. Pure string-building, no subprocess -- unit
+    testable without ffmpeg (or real PNGs) installed.
     """
-    video_chain_parts = _video_chain(opts, clip_duration)
+    base_chain = ",".join(_video_chain(opts, clip_duration))
+    caption_image_paths = list(caption_image_paths or [])
+    has_watermark = opts.watermark is not None
 
-    if opts.watermark is None:
-        return ",".join(video_chain_parts), False, []
+    if not caption_image_paths and not has_watermark:
+        return base_chain, False, []
 
-    # Watermark needs filter_complex because it's a second input overlaid
-    # on top of the main chain.
-    wm = opts.watermark
-    pos = _POSITION_EXPR[wm.position].format(margin=wm.margin_px)
-    wm_chain = []
-    if wm.scale_width_px:
-        wm_chain.append(f"scale={wm.scale_width_px}:-1")
-    if wm.opacity < 1.0:
-        wm_chain.append(f"format=rgba,colorchannelmixer=aa={wm.opacity}")
-    wm_filter = ",".join(wm_chain) if wm_chain else "null"
+    extra_inputs = list(caption_image_paths)
+    if has_watermark:
+        extra_inputs.append(opts.watermark.path)
 
-    main_chain = ",".join(video_chain_parts)
-    filter_complex = (
-        f"[0:v]{main_chain}[base];"
-        f"[1:v]{wm_filter}[wm];"
-        f"[base][wm]overlay={pos}[vout]"
-    )
-    return filter_complex, True, [wm.path]
+    steps = [f"[0:v]{base_chain}[base]"]
+    current = "base"
+    for i in range(len(caption_image_paths)):
+        nxt = f"cap{i + 1}"
+        steps.append(f"[{current}][{i + 1}:v]overlay=0:0[{nxt}]")
+        current = nxt
+
+    if has_watermark:
+        wm = opts.watermark
+        wm_input_idx = len(caption_image_paths) + 1
+        pos = _POSITION_EXPR[wm.position].format(margin=wm.margin_px)
+        wm_chain = []
+        if wm.scale_width_px:
+            wm_chain.append(f"scale={wm.scale_width_px}:-1")
+        if wm.opacity < 1.0:
+            wm_chain.append(f"format=rgba,colorchannelmixer=aa={wm.opacity}")
+        wm_filter = ",".join(wm_chain) if wm_chain else "null"
+        steps.append(f"[{wm_input_idx}:v]{wm_filter}[wmimg]")
+        steps.append(f"[{current}][wmimg]overlay={pos}[vout]")
+    else:
+        # relabel the last overlay's output as the standard [vout] sink
+        steps[-1] = steps[-1].rsplit("[", 1)[0] + "[vout]"
+
+    return ";".join(steps), True, extra_inputs
 
 
 def build_edit_cmd(
@@ -123,9 +127,10 @@ def build_edit_cmd(
     output_path: str,
     opts: EditOptions,
     clip_duration: Optional[float] = None,
+    caption_image_paths: Optional[List[str]] = None,
 ) -> List[str]:
     """Build the full ffmpeg command for one edit pass."""
-    graph, uses_filter_complex, extra_inputs = build_filter_graph(opts, clip_duration)
+    graph, uses_filter_complex, extra_inputs = build_filter_graph(opts, clip_duration, caption_image_paths)
 
     cmd = ["ffmpeg", "-y", "-i", input_path]
     for extra in extra_inputs:
@@ -181,6 +186,19 @@ def edit_clip(input_path: str, output_path: str, opts: EditOptions) -> Clip:
     duration = probe.duration
     if opts.max_duration:
         duration = min(duration, opts.max_duration)
-    cmd = build_edit_cmd(input_path, output_path, opts, clip_duration=probe.duration)
-    ffmpeg_utils.run(cmd)
+
+    if opts.captions:
+        with tempfile.TemporaryDirectory(prefix="reel_toolkit_captions_") as tmp_dir:
+            caption_paths = []
+            for i, caption in enumerate(opts.captions):
+                png_path = os.path.join(tmp_dir, f"caption_{i}.png")
+                render_caption_png(caption, opts.target_width, opts.target_height, png_path)
+                caption_paths.append(png_path)
+            cmd = build_edit_cmd(input_path, output_path, opts, clip_duration=probe.duration,
+                                  caption_image_paths=caption_paths)
+            ffmpeg_utils.run(cmd)
+    else:
+        cmd = build_edit_cmd(input_path, output_path, opts, clip_duration=probe.duration)
+        ffmpeg_utils.run(cmd)
+
     return Clip(path=output_path, label=os.path.basename(output_path), duration=duration, source=input_path)

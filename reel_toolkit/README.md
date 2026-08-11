@@ -10,10 +10,12 @@ shop's social media, but generic enough for any small business.
 ```
 reel_toolkit/
   models.py       Plain dataclasses: CutSpec, EditOptions, CaptionSpec, WatermarkSpec, Clip
-  ffmpeg_utils.py  subprocess wrapper around ffmpeg/ffprobe (the only I/O boundary)
+  ffmpeg_utils.py  subprocess wrapper around ffmpeg/ffprobe (the only ffmpeg I/O boundary)
+  caption_render.py  Renders caption text to a transparent PNG with Pillow (see
+                   "Why Pillow for captions?" below)
   splitter.py      Cut a source video into clips: explicit timestamps, equal-length
                    auto segments, or scene-change auto-detection
-  editor.py        Vertical crop/pad, captions, watermark, music mix, loudness
+  editor.py        Vertical crop/pad, caption/watermark overlay, music mix, loudness
                    normalization, fade in/out, duration clamp -- builds the ffmpeg
                    filter graph and command
   pipeline.py       Batch runner: one JSON config -> split + edit every clip -> manifest.json
@@ -69,9 +71,10 @@ Notes:
   sudo apt-get install ffmpeg  # Ubuntu/Debian
   winget install Gyan.FFmpeg   # Windows
   ```
-- No extra Python packages required (stdlib only). The repo's
-  `requirements.txt` covers the unrelated `suspension_predictor` app, not
-  needed for this toolkit.
+- **Python packages:** `pip install -r requirements.txt` from the repo
+  root (this covers the unrelated `suspension_predictor` app too, but also
+  includes everything reel_toolkit needs -- fastapi/uvicorn for the web UI
+  and Pillow for caption rendering).
 
 ## Quickstart
 
@@ -124,6 +127,14 @@ full shape. It writes finished clips to `<output_dir>/final/` and a
 - **Captions here are burned-in on-screen text** (hook/CTA overlays), not
   spoken-word auto-captions/subtitles. Add Instagram's built-in auto-caption
   sticker after upload if you also want word-by-word spoken captions.
+- **Why Pillow for captions, not ffmpeg's drawtext?** drawtext requires
+  ffmpeg to have been compiled with libfreetype, which isn't guaranteed --
+  notably, Homebrew's default `ffmpeg` formula on macOS currently ships
+  *without* it, so `brew install ffmpeg` alone gives you a binary where
+  drawtext doesn't exist. Rendering caption text to a PNG with Pillow
+  first and compositing it with ffmpeg's `overlay` filter (present in
+  every ffmpeg build) sidesteps that entirely -- captions work no matter
+  how ffmpeg on that machine was built.
 
 ## Testing
 

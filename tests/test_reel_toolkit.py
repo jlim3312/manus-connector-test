@@ -12,7 +12,10 @@ from unittest.mock import patch
 
 import pytest
 
+from PIL import Image
+
 from reel_toolkit import ffmpeg_utils, splitter
+from reel_toolkit.caption_render import parse_ffmpeg_color, render_caption_png
 from reel_toolkit.editor import build_edit_cmd, build_filter_graph
 from reel_toolkit.models import (
     CaptionSpec,
@@ -206,18 +209,24 @@ def test_build_filter_graph_fade_out_respects_max_duration_cap():
     assert "fade=t=out:st=5.500:d=0.5" in graph
 
 
-def test_build_filter_graph_captions_are_escaped_and_positioned():
+def test_build_filter_graph_captions_are_composited_as_image_overlays():
+    """Captions are pre-rendered PNGs (see caption_render.py) composited
+    with a plain overlay=0:0 -- not ffmpeg's drawtext, which requires
+    libfreetype and isn't available on every ffmpeg build (e.g. Homebrew's
+    default macOS formula ships without it).
+    """
     opts = EditOptions(
         fade_seconds=0,
-        captions=[
-            CaptionSpec(text="Before: totaled", position="top"),
-            CaptionSpec(text="Call us: 555-1234", position="bottom"),
-        ],
+        captions=[CaptionSpec(text="Before: totaled", position="top"),
+                  CaptionSpec(text="Call us: 555-1234", position="bottom")],
     )
-    graph, _, _ = build_filter_graph(opts)
-    assert "drawtext" in graph
-    assert "Call us\\: 555-1234" in graph  # colon escaped for ffmpeg filter syntax
-    assert graph.count("drawtext") == 2
+    graph, uses_fc, extra_inputs = build_filter_graph(opts, caption_image_paths=["cap0.png", "cap1.png"])
+    assert uses_fc is True
+    assert extra_inputs == ["cap0.png", "cap1.png"]
+    assert "drawtext" not in graph
+    assert "[1:v]" in graph and "[2:v]" in graph
+    assert graph.count("overlay=0:0") == 2
+    assert graph.endswith("[vout]")
 
 
 def test_build_filter_graph_watermark_uses_filter_complex_and_extra_input():
@@ -229,6 +238,27 @@ def test_build_filter_graph_watermark_uses_filter_complex_and_extra_input():
     assert "overlay=W-w-32:H-h-32[vout]" in graph
 
 
+def test_build_filter_graph_captions_and_watermark_together_order_inputs_correctly():
+    opts = EditOptions(
+        fade_seconds=0,
+        captions=[CaptionSpec(text="hook", position="top")],
+        watermark=WatermarkSpec(path="logo.png", position="bottom_right"),
+    )
+    graph, uses_fc, extra_inputs = build_filter_graph(opts, caption_image_paths=["cap0.png"])
+    # caption image(s) first, watermark last -- matches the -i ordering build_edit_cmd uses
+    assert extra_inputs == ["cap0.png", "logo.png"]
+    assert "[1:v]" in graph   # caption input
+    assert "[2:v]" in graph   # watermark input
+    assert graph.endswith("[vout]")
+
+
+def test_build_filter_graph_no_captions_or_watermark_stays_simple():
+    graph, uses_fc, extra_inputs = build_filter_graph(EditOptions(fade_seconds=0))
+    assert uses_fc is False
+    assert extra_inputs == []
+    assert "overlay" not in graph
+
+
 def test_build_edit_cmd_simple_case_has_expected_shape():
     opts = EditOptions(fade_seconds=0, max_duration=60)
     cmd = build_edit_cmd("in.mp4", "out.mp4", opts, clip_duration=90)
@@ -237,6 +267,22 @@ def test_build_edit_cmd_simple_case_has_expected_shape():
     assert "-t" in cmd and cmd[cmd.index("-t") + 1] == "60.000"
     assert cmd[-1] == "out.mp4"
     assert "-map" in cmd and "0:a?" in cmd
+
+
+def test_build_edit_cmd_with_captions_maps_caption_inputs_before_music():
+    opts = EditOptions(
+        fade_seconds=0,
+        captions=[CaptionSpec(text="hook", position="top")],
+        music_path="music.mp3",
+    )
+    cmd = build_edit_cmd("in.mp4", "out.mp4", opts, clip_duration=30, caption_image_paths=["cap0.png"])
+    # -i order must be: main video, caption png(s), then music -- build_edit_cmd's
+    # music_input_idx math (1 + len(extra_inputs)) depends on this exact order.
+    i_positions = [i for i, arg in enumerate(cmd) if arg == "-i"]
+    inputs_in_order = [cmd[i + 1] for i in i_positions]
+    assert inputs_in_order == ["in.mp4", "cap0.png", "music.mp3"]
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert "[2:a]" in fc  # music is input index 2 (0=video, 1=caption)
 
 
 def test_build_edit_cmd_with_music_builds_amix_and_maps_music_input():
@@ -269,6 +315,98 @@ def test_edit_clip_requires_ffmpeg(tmp_path):
         from reel_toolkit.editor import edit_clip
         with pytest.raises(ffmpeg_utils.FfmpegNotFoundError):
             edit_clip("in.mp4", str(tmp_path / "out.mp4"), EditOptions())
+
+
+def test_edit_clip_renders_caption_pngs_and_passes_them_to_ffmpeg(tmp_path):
+    """edit_clip should render one PNG per caption (via caption_render) and
+    thread their paths into the ffmpeg command as extra -i inputs -- this
+    is what replaced drawtext.
+    """
+    from reel_toolkit.editor import edit_clip
+
+    captured_cmd = {}
+
+    def fake_run(cmd):
+        captured_cmd["cmd"] = cmd
+        # sanity-check every caption PNG referenced in the command actually
+        # exists on disk at the moment ffmpeg would be invoked
+        for i, arg in enumerate(cmd):
+            if arg == "-i" and cmd[i + 1].endswith(".png"):
+                assert os.path.exists(cmd[i + 1])
+        return None
+
+    with patch.object(ffmpeg_utils, "require_ffmpeg"), \
+         patch.object(ffmpeg_utils, "probe") as mock_probe, \
+         patch.object(ffmpeg_utils, "run", side_effect=fake_run):
+        mock_probe.return_value = ffmpeg_utils.ProbeResult(duration=10.0, width=1080, height=1920, has_audio=True)
+        opts = EditOptions(captions=[CaptionSpec(text="They said it was totaled...", position="top")])
+        edit_clip("in.mp4", str(tmp_path / "out.mp4"), opts)
+
+    cmd = captured_cmd["cmd"]
+    assert any(arg.endswith(".png") for arg in cmd)
+    assert "drawtext" not in " ".join(cmd)
+
+
+# --------------------------------------------------------- caption_render --
+
+def test_render_caption_png_produces_frame_sized_transparent_image(tmp_path):
+    out_path = tmp_path / "cap.png"
+    caption = CaptionSpec(text="Free estimates -- link in bio", position="bottom")
+    render_caption_png(caption, width=1080, height=1920, out_path=str(out_path))
+
+    assert out_path.exists()
+    img = Image.open(out_path)
+    assert img.size == (1080, 1920)
+    assert img.mode == "RGBA"
+    # fully transparent somewhere (not covering the whole frame) and
+    # non-transparent somewhere (the text/box was actually drawn)
+    alpha_min, alpha_max = img.getchannel("A").getextrema()
+    assert alpha_min == 0
+    assert alpha_max > 0
+
+
+def test_render_caption_png_positions_text_top_vs_bottom(tmp_path):
+    """A 'top' caption's opaque pixels should be concentrated in the upper
+    half of the frame, and 'bottom' in the lower half."""
+    def opaque_row_center(path):
+        img = Image.open(path)
+        rows_with_content = [y for y in range(img.height)
+                              if any(img.getpixel((x, y))[3] > 0 for x in range(0, img.width, 20))]
+        return sum(rows_with_content) / len(rows_with_content)
+
+    top_path = tmp_path / "top.png"
+    bottom_path = tmp_path / "bottom.png"
+    render_caption_png(CaptionSpec(text="hook text", position="top"), 1080, 1920, str(top_path))
+    render_caption_png(CaptionSpec(text="cta text", position="bottom"), 1080, 1920, str(bottom_path))
+
+    assert opaque_row_center(top_path) < 1920 / 2
+    assert opaque_row_center(bottom_path) > 1920 / 2
+
+
+def test_render_caption_png_wraps_long_text(tmp_path):
+    out_path = tmp_path / "long.png"
+    long_caption = CaptionSpec(
+        text="This is a very long caption that should definitely wrap across more than one line "
+             "once it hits the frame width limit",
+        position="top",
+    )
+    # should not raise, and should produce a taller opaque region than a
+    # short one-line caption would
+    render_caption_png(long_caption, width=1080, height=1920, out_path=str(out_path))
+    assert out_path.exists()
+
+
+def test_parse_ffmpeg_color_named_and_alpha():
+    assert parse_ffmpeg_color("white") == (255, 255, 255, 255)
+    assert parse_ffmpeg_color("black@0.55") == (0, 0, 0, 140)
+
+
+def test_parse_ffmpeg_color_hex():
+    assert parse_ffmpeg_color("#ff8800") == (255, 136, 0, 255)
+
+
+def test_parse_ffmpeg_color_unknown_name_falls_back_to_white():
+    assert parse_ffmpeg_color("mystery-color")[:3] == (255, 255, 255)
 
 
 # -------------------------------------------------------------- pipeline --
