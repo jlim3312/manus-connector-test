@@ -18,7 +18,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from reel_toolkit import ffmpeg_utils, splitter
+from reel_toolkit import ffmpeg_utils, splitter, stitcher
 from reel_toolkit.editor import edit_clip
 from reel_toolkit.models import CaptionSpec, Clip, CutSpec, EditOptions, WatermarkSpec
 
@@ -91,6 +91,14 @@ async def process(
     max_duration: float = Form(60.0),
     watermark_position: str = Form("bottom_right"),
     music_volume_db: float = Form(-18.0),
+    auto_enhance: bool = Form(True),          # analyze footage and auto-correct color -- no numbers needed by default
+    saturation: float = Form(1.0),
+    contrast: float = Form(1.0),
+    brightness: float = Form(0.0),
+    color_temperature: Optional[int] = Form(None),
+    combine_with_transitions: bool = Form(False),
+    transition: str = Form(stitcher.DEFAULT_TRANSITION),
+    transition_duration: float = Form(0.5),
     watermark: Optional[UploadFile] = File(None),
     music: Optional[UploadFile] = File(None),
 ) -> JSONResponse:
@@ -103,6 +111,11 @@ async def process(
         raise HTTPException(400, "fit_mode must be 'crop' or 'pad'")
     if cut_mode not in ("whole", "auto", "manual"):
         raise HTTPException(400, "cut_mode must be 'whole', 'auto', or 'manual'")
+    if combine_with_transitions and transition not in stitcher.COMMON_TRANSITIONS:
+        raise HTTPException(
+            400,
+            f"Unknown transition '{transition}' -- choose one of: {', '.join(stitcher.COMMON_TRANSITIONS)}",
+        )
 
     job_id = uuid.uuid4().hex[:12]
     job_dir = JOBS_DIR / job_id
@@ -165,25 +178,48 @@ async def process(
         )
 
         final_dir.mkdir(parents=True, exist_ok=True)
+        opts_kwargs = dict(
+            fit_mode=fit_mode,
+            max_duration=max_duration or None,
+            captions=captions,
+            watermark=watermark_spec,
+            music_path=str(music_path) if music_path else None,
+            music_volume_db=music_volume_db,
+            auto_enhance=auto_enhance,
+            saturation=saturation,
+            contrast=contrast,
+            brightness=brightness,
+            color_temperature=color_temperature,
+        )
+
         results = []
-        for clip in raw_clips:
-            opts = EditOptions(
-                fit_mode=fit_mode,
-                max_duration=max_duration or None,
-                captions=captions,
-                watermark=watermark_spec,
-                music_path=str(music_path) if music_path else None,
-                music_volume_db=music_volume_db,
+        if combine_with_transitions and len(raw_clips) >= 2:
+            opts = EditOptions(**opts_kwargs)
+            stitched_path = job_dir / "stitched.mp4"
+            out_path = final_dir / "combined-reel.mp4"
+            final_clip = stitcher.stitch_and_polish(
+                [c.path for c in raw_clips], str(stitched_path), str(out_path), opts,
+                transition=transition, transition_duration=transition_duration,
             )
-            out_name = Path(clip.path).stem + "-reel.mp4"
-            out_path = final_dir / out_name
-            final_clip = edit_clip(clip.path, str(out_path), opts)
             results.append({
-                "label": clip.label,
+                "label": f"combined ({len(raw_clips)} clips, {transition} transition)",
                 "duration": round(final_clip.duration, 1),
-                "url": f"/jobs/{job_id}/final/{out_name}",
+                "url": f"/jobs/{job_id}/final/combined-reel.mp4",
             })
+        else:
+            for clip in raw_clips:
+                opts = EditOptions(**opts_kwargs)
+                out_name = Path(clip.path).stem + "-reel.mp4"
+                out_path = final_dir / out_name
+                final_clip = edit_clip(clip.path, str(out_path), opts)
+                results.append({
+                    "label": clip.label,
+                    "duration": round(final_clip.duration, 1),
+                    "url": f"/jobs/{job_id}/final/{out_name}",
+                })
     except ffmpeg_utils.FfmpegError as e:
         raise HTTPException(500, f"ffmpeg failed: {e}")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
     return JSONResponse({"job_id": job_id, "clips": results})

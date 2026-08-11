@@ -14,9 +14,9 @@ import pytest
 
 from PIL import Image
 
-from reel_toolkit import ffmpeg_utils, splitter
+from reel_toolkit import ffmpeg_utils, splitter, stitcher
 from reel_toolkit.caption_render import parse_ffmpeg_color, render_caption_png
-from reel_toolkit.editor import build_edit_cmd, build_filter_graph
+from reel_toolkit.editor import build_edit_cmd, build_filter_graph, color_filters
 from reel_toolkit.models import (
     CaptionSpec,
     CutSpec,
@@ -75,6 +75,20 @@ def test_caption_spec_validates_position():
 def test_edit_options_validates_fit_mode():
     with pytest.raises(ValueError):
         EditOptions(fit_mode="stretch")
+
+
+def test_edit_options_validates_color_grading_ranges():
+    with pytest.raises(ValueError):
+        EditOptions(saturation=-0.1)
+    with pytest.raises(ValueError):
+        EditOptions(contrast=-1)
+    with pytest.raises(ValueError):
+        EditOptions(brightness=1.5)
+    with pytest.raises(ValueError):
+        EditOptions(color_temperature=500)  # below the 1000K floor
+    with pytest.raises(ValueError):
+        EditOptions(color_temperature=50000)  # above the 40000K ceiling
+    EditOptions(saturation=1.3, contrast=1.1, brightness=-0.2, color_temperature=4500)  # should not raise
 
 
 # -------------------------------------------------------------- splitter --
@@ -259,6 +273,62 @@ def test_build_filter_graph_no_captions_or_watermark_stays_simple():
     assert "overlay" not in graph
 
 
+# -------------------------------------------------------- color grading --
+
+def test_color_filters_empty_by_default():
+    assert color_filters(EditOptions()) == []
+
+
+def test_color_filters_auto_enhance_uses_normalize_and_vibrance():
+    parts = color_filters(EditOptions(auto_enhance=True))
+    assert any(p.startswith("normalize") for p in parts)
+    assert any(p.startswith("vibrance") for p in parts)
+
+
+def test_color_filters_auto_enhance_normalize_uses_reduced_strength_and_linked_channels():
+    """Regression test: ffmpeg's `normalize` at its full-strength default
+    (independent per-channel stretch to pure black/white) crushes a frame
+    dominated by one flat, low-variance color to solid black -- confirmed
+    against a real solid-color clip through actual ffmpeg. Exactly the
+    kind of shot this shop films constantly (a tight closeup on a
+    solid-color panel). auto_enhance must use a tamed strength/independence
+    instead of bare 'normalize', or this bites on real footage.
+    """
+    parts = color_filters(EditOptions(auto_enhance=True))
+    normalize_filter = next(p for p in parts if p.startswith("normalize"))
+    assert normalize_filter != "normalize", "must not use ffmpeg's unsafe full-strength default"
+    assert "strength=0.5" in normalize_filter
+    assert "independence=0" in normalize_filter
+
+
+def test_color_filters_manual_saturation_contrast_brightness_use_eq():
+    parts = color_filters(EditOptions(saturation=1.3, contrast=1.1, brightness=-0.1))
+    assert len(parts) == 1
+    assert parts[0] == "eq=saturation=1.3:contrast=1.1:brightness=-0.1"
+
+
+def test_color_filters_warmth_uses_colortemperature():
+    parts = color_filters(EditOptions(color_temperature=4500))
+    assert parts == ["colortemperature=temperature=4500"]
+
+
+def test_color_filters_auto_enhance_and_manual_stack_in_order():
+    """Auto-enhance (analysis-driven) applies first; manual fine-tuning
+    layers on top of it, not the other way around."""
+    parts = color_filters(EditOptions(auto_enhance=True, saturation=1.2, color_temperature=8000))
+    assert parts[0].startswith("normalize")
+    assert parts[1].startswith("vibrance")
+    assert parts[2].startswith("eq=saturation=1.2")
+    assert parts[3] == "colortemperature=temperature=8000"
+
+
+def test_build_filter_graph_includes_color_filters_in_base_chain():
+    opts = EditOptions(fade_seconds=0, auto_enhance=True)
+    graph, _, _ = build_filter_graph(opts)
+    assert "normalize" in graph
+    assert "vibrance" in graph
+
+
 def test_build_edit_cmd_simple_case_has_expected_shape():
     opts = EditOptions(fade_seconds=0, max_duration=60)
     cmd = build_edit_cmd("in.mp4", "out.mp4", opts, clip_duration=90)
@@ -407,6 +477,85 @@ def test_parse_ffmpeg_color_hex():
 
 def test_parse_ffmpeg_color_unknown_name_falls_back_to_white():
     assert parse_ffmpeg_color("mystery-color")[:3] == (255, 255, 255)
+
+
+# --------------------------------------------------------------- stitcher --
+
+def test_build_stitch_cmd_requires_at_least_two_clips():
+    with pytest.raises(ValueError):
+        stitcher.build_stitch_cmd(["a.mp4"], [10.0], "out.mp4", EditOptions())
+
+
+def test_build_stitch_cmd_rejects_clip_shorter_than_transition():
+    with pytest.raises(ValueError):
+        stitcher.build_stitch_cmd(["a.mp4", "b.mp4"], [0.3, 10.0], "out.mp4", EditOptions(),
+                                   transition_duration=0.5)
+
+
+def test_build_stitch_cmd_rejects_mismatched_lengths():
+    with pytest.raises(ValueError):
+        stitcher.build_stitch_cmd(["a.mp4", "b.mp4"], [10.0], "out.mp4", EditOptions())
+
+
+def test_build_stitch_cmd_chains_xfade_and_acrossfade_across_three_clips():
+    cmd = stitcher.build_stitch_cmd(
+        ["a.mp4", "b.mp4", "c.mp4"], [10.0, 8.0, 12.0], "out.mp4", EditOptions(fade_seconds=0),
+        transition="wipeleft", transition_duration=0.5,
+    )
+    assert cmd.count("-i") == 3
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert fc.count("xfade=transition=wipeleft:duration=0.5") == 2  # 3 clips -> 2 transitions
+    assert fc.count("acrossfade=d=0.5") == 2
+    # second xfade's offset accounts for the first clip minus the first transition's overlap
+    assert "offset=9.500" in fc   # clip0 (10s) - 0.5s transition
+    assert "offset=17.000" in fc  # + clip1 (8s) - 0.5s transition
+    video_map_idx = cmd.index("-map") + 1
+    assert cmd[video_map_idx].startswith("[v")
+    assert cmd[-1] == "out.mp4"
+
+
+def test_build_stitch_cmd_applies_grading_per_segment():
+    cmd = stitcher.build_stitch_cmd(
+        ["a.mp4", "b.mp4"], [10.0, 10.0], "out.mp4",
+        EditOptions(fade_seconds=0, auto_enhance=True, fit_mode="crop"),
+    )
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert fc.count("normalize") == 2  # applied to each of the 2 input segments
+    assert fc.count("scale=1080:1920") == 2
+
+
+def test_stitched_duration_accounts_for_transition_overlap():
+    assert stitcher.stitched_duration([10.0, 10.0, 10.0], transition_duration=0.5) == 29.0
+
+
+def test_polish_options_after_stitch_neutralizes_color_grading_only():
+    opts = EditOptions(
+        auto_enhance=True, saturation=1.5, contrast=1.2, brightness=0.3, color_temperature=4500,
+        fit_mode="pad", max_duration=30,
+    )
+    polished = stitcher.polish_options_after_stitch(opts)
+    assert polished.auto_enhance is False
+    assert polished.saturation == 1.0
+    assert polished.contrast == 1.0
+    assert polished.brightness == 0.0
+    assert polished.color_temperature is None
+    # non-color settings must survive untouched
+    assert polished.fit_mode == "pad"
+    assert polished.max_duration == 30
+
+
+def test_stitch_clips_probes_each_input_and_invokes_ffmpeg(tmp_path):
+    with patch.object(ffmpeg_utils, "require_ffmpeg"), \
+         patch.object(ffmpeg_utils, "probe") as mock_probe, \
+         patch.object(ffmpeg_utils, "run") as mock_run:
+        mock_probe.side_effect = [
+            ffmpeg_utils.ProbeResult(duration=10.0, width=1080, height=1920, has_audio=True),
+            ffmpeg_utils.ProbeResult(duration=8.0, width=1080, height=1920, has_audio=True),
+        ]
+        clip = stitcher.stitch_clips(["a.mp4", "b.mp4"], str(tmp_path / "out.mp4"), EditOptions(fade_seconds=0))
+    assert mock_probe.call_count == 2
+    assert mock_run.call_count == 1
+    assert clip.duration == pytest.approx(10.0 + 8.0 - 0.5)
 
 
 # -------------------------------------------------------------- pipeline --

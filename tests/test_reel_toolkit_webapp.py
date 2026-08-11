@@ -176,6 +176,110 @@ def test_process_manual_mode_rejects_bad_cut_list(mocked_ffmpeg):
     assert res.status_code == 400
 
 
+def test_process_auto_enhance_defaults_to_true_and_is_passed_through(mocked_ffmpeg):
+    """The web UI's 'Auto-enhance colors' checkbox is checked by default --
+    confirm the resulting EditOptions actually carries that through to
+    edit_clip when the form field is omitted (as a real un-submitted
+    checkbox would be) as well as when explicitly sent.
+    """
+    captured = {}
+
+    def capturing_edit_clip(input_path, output_path, opts):
+        captured["opts"] = opts
+        return _fake_edit_clip(input_path, output_path, opts)
+
+    with patch.object(ffmpeg_utils, "require_ffmpeg"), \
+         patch.object(ffmpeg_utils, "probe") as mock_probe, \
+         patch("reel_toolkit.webapp.main.edit_clip", side_effect=capturing_edit_clip):
+        mock_probe.return_value = ffmpeg_utils.ProbeResult(duration=10.0, width=1080, height=1920, has_audio=True)
+        res = client.post(
+            "/api/process",
+            data={"cut_mode": "whole"},  # auto_enhance omitted -> Form(True) default applies
+            files={"video": ("job.mp4", io.BytesIO(b"x"), "video/mp4")},
+        )
+    assert res.status_code == 200, res.text
+    assert captured["opts"].auto_enhance is True
+
+
+def test_process_manual_color_values_are_passed_through(mocked_ffmpeg):
+    captured = {}
+
+    def capturing_edit_clip(input_path, output_path, opts):
+        captured["opts"] = opts
+        return _fake_edit_clip(input_path, output_path, opts)
+
+    with patch.object(ffmpeg_utils, "require_ffmpeg"), \
+         patch.object(ffmpeg_utils, "probe") as mock_probe, \
+         patch("reel_toolkit.webapp.main.edit_clip", side_effect=capturing_edit_clip):
+        mock_probe.return_value = ffmpeg_utils.ProbeResult(duration=10.0, width=1080, height=1920, has_audio=True)
+        res = client.post(
+            "/api/process",
+            data={"cut_mode": "whole", "auto_enhance": "false", "saturation": "1.4",
+                  "contrast": "1.1", "brightness": "-0.1", "color_temperature": "4500"},
+            files={"video": ("job.mp4", io.BytesIO(b"x"), "video/mp4")},
+        )
+    assert res.status_code == 200, res.text
+    opts = captured["opts"]
+    assert opts.auto_enhance is False
+    assert opts.saturation == 1.4
+    assert opts.contrast == 1.1
+    assert opts.brightness == -0.1
+    assert opts.color_temperature == 4500
+
+
+def test_process_combine_with_transitions_calls_stitcher():
+    with patch.object(ffmpeg_utils, "require_ffmpeg"), \
+         patch.object(ffmpeg_utils, "probe") as mock_probe, \
+         patch("reel_toolkit.webapp.main.splitter.split_video", side_effect=_fake_split_video), \
+         patch("reel_toolkit.webapp.main.stitcher.stitch_and_polish") as mock_stitch:
+        mock_probe.return_value = ffmpeg_utils.ProbeResult(duration=60.0, width=1080, height=1920, has_audio=True)
+
+        def fake_stitch(clip_paths, stitched_path, final_path, opts, transition, transition_duration):
+            with open(final_path, "wb") as f:
+                f.write(b"stitched-bytes")
+            return Clip(path=final_path, label="stitched", duration=55.0)
+
+        mock_stitch.side_effect = fake_stitch
+        res = client.post(
+            "/api/process",
+            data={"cut_mode": "auto", "segment_seconds": "30", "combine_with_transitions": "true",
+                  "transition": "wipeleft", "transition_duration": "0.5"},
+            files={"video": ("job.mp4", io.BytesIO(b"x"), "video/mp4")},
+        )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert mock_stitch.call_count == 1
+    args = mock_stitch.call_args.args
+    assert len(args[0]) == 2  # 2 clip paths from a 60s video / 30s segments
+    assert len(body["clips"]) == 1  # one combined result, not one per cut
+    assert "combined" in body["clips"][0]["label"]
+
+
+def test_process_combine_with_transitions_ignored_for_single_clip(mocked_ffmpeg):
+    """'whole' mode only ever produces one clip -- combine_with_transitions
+    should be a no-op (falls back to the normal single-clip edit path)
+    rather than erroring on 'stitching needs at least 2 clips'."""
+    with patch("reel_toolkit.webapp.main.stitcher.stitch_and_polish") as mock_stitch:
+        res = client.post(
+            "/api/process",
+            data={"cut_mode": "whole", "combine_with_transitions": "true"},
+            files={"video": ("job.mp4", io.BytesIO(b"x"), "video/mp4")},
+        )
+    assert res.status_code == 200, res.text
+    mock_stitch.assert_not_called()
+    assert len(res.json()["clips"]) == 1
+
+
+def test_process_rejects_unknown_transition(mocked_ffmpeg):
+    res = client.post(
+        "/api/process",
+        data={"cut_mode": "auto", "combine_with_transitions": "true", "transition": "made-up-transition"},
+        files={"video": ("job.mp4", io.BytesIO(b"x"), "video/mp4")},
+    )
+    assert res.status_code == 400
+    assert "made-up-transition" in res.json()["detail"]
+
+
 def test_process_rejects_bad_fit_mode(mocked_ffmpeg):
     res = client.post(
         "/api/process",

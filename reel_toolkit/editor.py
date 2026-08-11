@@ -55,11 +55,46 @@ _POSITION_EXPR = {
 }
 
 
+def color_filters(opts: EditOptions) -> List[str]:
+    """Color grading filters, as a list of ffmpeg filter strings -- empty
+    if opts asks for no adjustment. All filters used here (`normalize`,
+    `vibrance`, `eq`, `colortemperature`) are built into every ffmpeg
+    binary, unlike drawtext -- no compile-flag gotchas.
+
+    opts.auto_enhance analyzes each frame's actual histogram and corrects
+    levels/white-balance automatically (ffmpeg's `normalize` filter) plus
+    a mild automatic saturation lift (`vibrance`) -- no numbers required,
+    for anyone who'd rather the tool just figure it out from the footage.
+    saturation/contrast/brightness/color_temperature are optional manual
+    fine-tuning layered on top of that, for anyone who wants direct control.
+
+    `normalize` is used at reduced strength with channels linked
+    (independence=0) rather than ffmpeg's full-strength default: at full
+    strength it stretches each frame's actual min/max to pure black/white,
+    which looks great on footage with real shadow/highlight range but
+    crushes a frame that's dominated by one flat, low-variance color --
+    e.g. a tight closeup on a solid-color panel, exactly the kind of shot
+    this shop films constantly -- to solid black. Confirmed against a
+    solid-color test clip before picking these numbers.
+    """
+    parts = []
+    if opts.auto_enhance:
+        parts.append("normalize=strength=0.5:independence=0:smoothing=20")
+        parts.append("vibrance=intensity=0.15")
+    if opts.saturation != 1.0 or opts.contrast != 1.0 or opts.brightness != 0.0:
+        parts.append(f"eq=saturation={opts.saturation}:contrast={opts.contrast}:brightness={opts.brightness}")
+    if opts.color_temperature is not None:
+        parts.append(f"colortemperature=temperature={opts.color_temperature}")
+    return parts
+
+
 def _video_chain(opts: EditOptions, clip_duration: Optional[float]) -> List[str]:
-    """The base scale/crop-or-pad + fade filters, before any overlays."""
+    """The base scale/crop-or-pad + color grading + fade filters, before
+    any overlays."""
     chain = [_scale_crop_filter(opts.target_width, opts.target_height)
              if opts.fit_mode == "crop"
              else _scale_pad_filter(opts.target_width, opts.target_height)]
+    chain += color_filters(opts)
 
     if opts.fade_seconds > 0:
         chain.append(f"fade=t=in:st=0:d={opts.fade_seconds}")

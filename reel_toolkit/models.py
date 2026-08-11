@@ -126,11 +126,28 @@ class EditOptions:
     video_bitrate: Optional[str] = None   # e.g. "6M"; None = let CRF decide
     crf: int = 20
 
+    # Color grading (ffmpeg's `normalize`/`vibrance`/`eq`/`colortemperature`
+    # filters -- all built into every ffmpeg build, no special compile
+    # flags needed, unlike drawtext).
+    auto_enhance: bool = False       # analyze each frame and auto-correct levels/color -- no numbers needed
+    saturation: float = 1.0          # manual fine-tune, applied on top of auto_enhance: 1.0=unchanged, 0=grayscale
+    contrast: float = 1.0            # 1.0 = unchanged
+    brightness: float = 0.0          # -1.0..1.0, 0 = unchanged
+    color_temperature: Optional[int] = None  # Kelvin, e.g. 4500=warmer, 8500=cooler; None = unchanged
+
     def __post_init__(self):
         if self.fit_mode not in ("crop", "pad"):
             raise ValueError("fit_mode must be 'crop' or 'pad'")
         if self.target_width <= 0 or self.target_height <= 0:
             raise ValueError("target dimensions must be positive")
+        if self.saturation < 0:
+            raise ValueError("saturation must be >= 0")
+        if self.contrast < 0:
+            raise ValueError("contrast must be >= 0")
+        if not (-1.0 <= self.brightness <= 1.0):
+            raise ValueError("brightness must be between -1.0 and 1.0")
+        if self.color_temperature is not None and not (1000 <= self.color_temperature <= 40000):
+            raise ValueError("color_temperature must be between 1000 and 40000 Kelvin")
 
 
 @dataclass

@@ -15,9 +15,11 @@ reel_toolkit/
                    "Why Pillow for captions?" below)
   splitter.py      Cut a source video into clips: explicit timestamps, equal-length
                    auto segments, or scene-change auto-detection
-  editor.py        Vertical crop/pad, caption/watermark overlay, music mix, loudness
-                   normalization, fade in/out, duration clamp -- builds the ffmpeg
-                   filter graph and command
+  editor.py        Vertical crop/pad, color grading, caption/watermark overlay, music
+                   mix, loudness normalization, fade in/out, duration clamp -- builds
+                   the ffmpeg filter graph and command
+  stitcher.py       Combine multiple clips into one Reel with a transition (crossfade,
+                   wipe, etc.) at each cut, instead of separate clip files
   pipeline.py       Batch runner: one JSON config -> split + edit every clip -> manifest.json
   cli.py            `python -m reel_toolkit.cli ...`
   webapp/
@@ -40,8 +42,11 @@ read that first if you're the one filming/posting, not writing code.
 
 For anyone on the team who'd rather not touch a terminal, there's a local
 web app: drop in a video, fill in a short form (captions, logo, music,
-how to cut it), click **Process video**, then preview and download the
-finished Reels right in the browser.
+how to cut it, color, optional transitions), click **Process video**,
+then preview and download the finished Reels right in the browser.
+"Auto-enhance colors" is on by default -- the tool figures out color
+correction from the footage itself, no sliders required unless you want
+to fine-tune manually.
 
 ```bash
 pip install -r requirements.txt          # fastapi/uvicorn, from repo root
@@ -97,9 +102,37 @@ python -m reel_toolkit.cli edit clips/01-before-teardown.mp4 \
   --music assets/music/upbeat_bed.mp3 \
   --max-duration 45
 
+# --- or combine several cuts into ONE Reel with a transition at each cut ---
+python -m reel_toolkit.cli stitch clips/01-before.mp4 clips/02-process.mp4 clips/03-after.mp4 \
+  --out final/combined-reel.mp4 --transition fade --transition-duration 0.5 \
+  --auto-enhance --caption-top "Before -> Process -> After"
+
 # --- or do the whole job in one shot from a config file ---
 python -m reel_toolkit.cli batch reel_toolkit/examples/project_config.json
 ```
+
+## Color grading
+
+`--auto-enhance` analyzes each frame's actual histogram and corrects
+levels/color automatically (no numbers to figure out) -- it's the
+recommended default and is what the web UI's "Auto-enhance colors"
+checkbox uses. For direct manual control instead (or on top of it),
+`edit` and `stitch` both also take `--saturation`, `--contrast`,
+`--brightness`, and `--warmth KELVIN` (e.g. `--warmth 4500` for warmer,
+`--warmth 8500` for cooler).
+
+## Transitions
+
+`stitch` combines 2+ clips into one continuous video instead of leaving
+them as separate files -- e.g. a single before → process → after Reel
+with a crossfade at each cut. Pick `--transition` from `fade`,
+`fadeblack`, `fadewhite`, `dissolve`, `wipeleft`/`wiperight`/`wipeup`/`wipedown`,
+`slideleft`/`slideright`/`slideup`/`slidedown`, `circleopen`/`circleclose`,
+`smoothleft`/`smoothright` (or any other valid ffmpeg `xfade` transition
+name), and `--transition-duration` for how long each crossfade lasts.
+Every clip must be longer than the transition duration. Color
+grading/crop happens per-segment during stitching; captions/watermark/
+music/loudness/fade apply once, to the whole combined result.
 
 `batch` mode reads a JSON config describing the source video, the cuts (or
 an auto-segment length), global edit settings, and per-clip caption/edit
@@ -135,6 +168,14 @@ full shape. It writes finished clips to `<output_dir>/final/` and a
   first and compositing it with ffmpeg's `overlay` filter (present in
   every ffmpeg build) sidesteps that entirely -- captions work no matter
   how ffmpeg on that machine was built.
+- **`--auto-enhance` deliberately doesn't use ffmpeg's `normalize` filter
+  at its default settings.** Full-strength `normalize` stretches each
+  frame's actual min/max to pure black/white, which crushes a frame
+  dominated by one flat, low-variance color -- e.g. a tight closeup on a
+  solid-color panel, exactly the kind of shot a body shop films
+  constantly -- to solid black. Confirmed against a real solid-color test
+  clip before shipping; `auto_enhance` uses reduced strength with linked
+  channels instead (see `editor.color_filters`).
 
 ## Testing
 

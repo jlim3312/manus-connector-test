@@ -165,6 +165,31 @@
         <label>Cut list <span class="hint">one per line: <code>start-end label</code>, e.g. <code>0:00-0:45 Hook and teardown</code></span></label>
         <textarea id="manualCuts" placeholder="0:00-0:45 Hook and teardown&#10;0:45-1:20 Paint booth&#10;1:20-1:45 Reveal"></textarea>
       </div>
+      <div class="field" id="combineField" style="display:none; margin-top: 14px;">
+        <label style="display:flex; align-items:center; gap:8px; font-weight:600;">
+          <input type="checkbox" id="combineTransitions" style="width:auto;">
+          Combine into one Reel with a transition between each cut
+          <span class="hint" style="font-weight:400;">instead of separate clip files -- e.g. before → process → after as one video</span>
+        </label>
+        <div class="grid2" id="transitionFields" style="display:none; margin-top: 10px;">
+          <div class="field">
+            <label>Transition style</label>
+            <select id="transitionStyle">
+              <option value="fade" selected>Fade</option>
+              <option value="dissolve">Dissolve</option>
+              <option value="wipeleft">Wipe left</option>
+              <option value="wiperight">Wipe right</option>
+              <option value="slideup">Slide up</option>
+              <option value="circleopen">Circle open</option>
+              <option value="smoothleft">Smooth left</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Transition length (seconds)</label>
+            <input type="number" id="transitionDuration" value="0.5" min="0.1" max="2" step="0.1">
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="panel">
@@ -204,7 +229,37 @@
     </div>
 
     <div class="panel">
-      <h2>4. Frame &amp; length</h2>
+      <h2>4. Color</h2>
+      <label style="display:flex; align-items:center; gap:8px; font-weight:600;">
+        <input type="checkbox" id="autoEnhance" checked style="width:auto;">
+        ✨ Auto-enhance colors
+        <span class="hint" style="font-weight:400;">analyzes the footage and corrects color/levels automatically -- no numbers to figure out</span>
+      </label>
+      <details style="margin-top: 12px;">
+        <summary style="cursor:pointer; font-size:0.85rem; font-weight:600; color: var(--muted);">Fine-tune manually (optional)</summary>
+        <div class="grid2" style="margin-top: 12px;">
+          <div class="field">
+            <label>Saturation <span class="hint">1.0 = unchanged, 0 = grayscale</span></label>
+            <input type="number" id="saturation" value="1.0" min="0" max="3" step="0.1">
+          </div>
+          <div class="field">
+            <label>Contrast <span class="hint">1.0 = unchanged</span></label>
+            <input type="number" id="contrast" value="1.0" min="0" max="3" step="0.1">
+          </div>
+          <div class="field">
+            <label>Brightness <span class="hint">-1.0 to 1.0, 0 = unchanged</span></label>
+            <input type="number" id="brightness" value="0.0" min="-1" max="1" step="0.05">
+          </div>
+          <div class="field">
+            <label>Warmth <span class="hint">Kelvin -- lower = warmer, higher = cooler, blank = unchanged</span></label>
+            <input type="number" id="colorTemperature" placeholder="e.g. 4500 (warm) / 8500 (cool)" min="1000" max="40000" step="100">
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <div class="panel">
+      <h2>5. Frame &amp; length</h2>
       <div class="grid2">
         <div class="field">
           <label>Fit mode</label>
@@ -277,7 +332,15 @@
       const mode = document.querySelector('input[name=cutMode]:checked').value;
       document.getElementById('autoSegmentField').style.display = mode === 'auto' ? 'block' : 'none';
       document.getElementById('manualCutsField').style.display = mode === 'manual' ? 'block' : 'none';
+      // combining with transitions only makes sense with 2+ cuts
+      const combineField = document.getElementById('combineField');
+      combineField.style.display = mode === 'whole' ? 'none' : 'block';
+      if (mode === 'whole') document.getElementById('combineTransitions').checked = false;
     });
+  });
+
+  document.getElementById('combineTransitions').addEventListener('change', (e) => {
+    document.getElementById('transitionFields').style.display = e.target.checked ? 'grid' : 'none';
   });
 
   function setStatus(msg, state) {
@@ -320,6 +383,15 @@
     form.append('max_duration', document.getElementById('maxDuration').value);
     form.append('watermark_position', document.getElementById('watermarkPosition').value);
     form.append('music_volume_db', document.getElementById('musicVolume').value);
+    form.append('auto_enhance', document.getElementById('autoEnhance').checked);
+    form.append('saturation', document.getElementById('saturation').value);
+    form.append('contrast', document.getElementById('contrast').value);
+    form.append('brightness', document.getElementById('brightness').value);
+    const warmth = document.getElementById('colorTemperature').value;
+    if (warmth) form.append('color_temperature', warmth);
+    form.append('combine_with_transitions', document.getElementById('combineTransitions').checked);
+    form.append('transition', document.getElementById('transitionStyle').value);
+    form.append('transition_duration', document.getElementById('transitionDuration').value);
     const wmFile = document.getElementById('watermarkFile').files[0];
     if (wmFile) form.append('watermark', wmFile);
     const musicFile = document.getElementById('musicFile').files[0];
