@@ -677,6 +677,38 @@ def test_cli_parser_builds_edit_options_from_flags():
     assert opts.watermark.path == "logo.png"
 
 
+def test_cli_parser_wires_up_music_and_ducking_flags():
+    from reel_toolkit.cli import build_parser, _build_edit_options
+    parser = build_parser()
+    args = parser.parse_args([
+        "edit", "in.mp4", "--out", "out.mp4",
+        "--music", "bed.mp3", "--music-volume-db", "-20", "--duck-original-db", "-8",
+    ])
+    opts = _build_edit_options(args)
+    assert opts.music_path == "bed.mp3"
+    assert opts.music_volume_db == -20
+    assert opts.duck_original_audio_db == -8
+
+
+def test_cli_parser_duck_original_db_defaults_to_zero_no_ducking():
+    from reel_toolkit.cli import build_parser, _build_edit_options
+    parser = build_parser()
+    args = parser.parse_args(["edit", "in.mp4", "--out", "out.mp4", "--music", "bed.mp3"])
+    opts = _build_edit_options(args)
+    assert opts.duck_original_audio_db == 0.0
+
+
+def test_cli_stitch_parser_also_has_ducking_flag():
+    from reel_toolkit.cli import build_parser, _build_edit_options
+    parser = build_parser()
+    args = parser.parse_args([
+        "stitch", "a.mp4", "b.mp4", "--out", "out.mp4",
+        "--music", "bed.mp3", "--duck-original-db", "-10",
+    ])
+    opts = _build_edit_options(args)
+    assert opts.duck_original_audio_db == -10
+
+
 def test_cli_parser_requires_subcommand():
     from reel_toolkit.cli import build_parser
     parser = build_parser()

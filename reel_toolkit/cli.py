@@ -73,6 +73,7 @@ def _build_edit_options(args: argparse.Namespace) -> EditOptions:
         watermark=watermark,
         music_path=args.music,
         music_volume_db=args.music_volume_db,
+        duck_original_audio_db=args.duck_original_db,
         normalize_loudness=not args.no_loudness_normalize,
         fade_seconds=args.fade_seconds,
         auto_enhance=args.auto_enhance,
@@ -81,6 +82,14 @@ def _build_edit_options(args: argparse.Namespace) -> EditOptions:
         brightness=args.brightness,
         color_temperature=args.warmth,
     )
+
+
+def _add_music_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--music", default=None, help="path to a background music track to mix in quietly")
+    parser.add_argument("--music-volume-db", type=float, default=-18.0)
+    parser.add_argument("--duck-original-db", type=float, default=0.0, metavar="DB",
+                         help="lower the original video's audio by this many dB while music plays under it "
+                              "(negative number, e.g. -6); 0 = leave original audio at full volume alongside music")
 
 
 def _add_color_args(parser: argparse.ArgumentParser) -> None:
@@ -153,8 +162,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_edit.add_argument("--watermark", default=None, help="path to a logo PNG (transparent background recommended)")
     p_edit.add_argument("--watermark-position", default="bottom_right",
                          choices=["top_left", "top_right", "bottom_left", "bottom_right", "center"])
-    p_edit.add_argument("--music", default=None, help="path to a background music track to mix in quietly")
-    p_edit.add_argument("--music-volume-db", type=float, default=-18.0)
+    _add_music_args(p_edit)
     p_edit.add_argument("--no-loudness-normalize", action="store_true")
     p_edit.add_argument("--fade-seconds", type=float, default=0.4)
     _add_color_args(p_edit)
@@ -176,8 +184,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_stitch.add_argument("--watermark", default=None, help="path to a logo PNG (transparent background recommended)")
     p_stitch.add_argument("--watermark-position", default="bottom_right",
                            choices=["top_left", "top_right", "bottom_left", "bottom_right", "center"])
-    p_stitch.add_argument("--music", default=None, help="path to a background music track to mix in quietly")
-    p_stitch.add_argument("--music-volume-db", type=float, default=-18.0)
+    _add_music_args(p_stitch)
     p_stitch.add_argument("--no-loudness-normalize", action="store_true")
     p_stitch.add_argument("--fade-seconds", type=float, default=0.4)
     _add_color_args(p_stitch)

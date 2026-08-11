@@ -134,6 +134,15 @@ Every clip must be longer than the transition duration. Color
 grading/crop happens per-segment during stitching; captions/watermark/
 music/loudness/fade apply once, to the whole combined result.
 
+## Music vs. original audio
+
+`--music path/to/track.mp3` mixes a background track in under the clip's
+original audio (both `edit` and `stitch`, and the web UI). By default the
+original audio stays at full volume alongside it -- if you want the
+original sound (shop noise, talking) turned down while the music plays,
+add `--duck-original-db -6` (or more negative for quieter); `0`, the
+default, leaves it untouched. `--music-volume-db` controls the music
+track's own volume the same way.
 `batch` mode reads a JSON config describing the source video, the cuts (or
 an auto-segment length), global edit settings, and per-clip caption/edit
 overrides keyed by cut label. See `examples/project_config.json` for the

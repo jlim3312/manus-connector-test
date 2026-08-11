@@ -227,6 +227,40 @@ def test_process_manual_color_values_are_passed_through(mocked_ffmpeg):
     assert opts.color_temperature == 4500
 
 
+def test_process_duck_original_audio_db_is_passed_through(mocked_ffmpeg):
+    captured = {}
+
+    def capturing_edit_clip(input_path, output_path, opts):
+        captured["opts"] = opts
+        return _fake_edit_clip(input_path, output_path, opts)
+
+    with patch("reel_toolkit.webapp.main.edit_clip", side_effect=capturing_edit_clip):
+        res = client.post(
+            "/api/process",
+            data={"cut_mode": "whole", "duck_original_audio_db": "-8"},
+            files={"video": ("job.mp4", io.BytesIO(b"x"), "video/mp4")},
+        )
+    assert res.status_code == 200, res.text
+    assert captured["opts"].duck_original_audio_db == -8
+
+
+def test_process_duck_original_audio_db_defaults_to_zero(mocked_ffmpeg):
+    captured = {}
+
+    def capturing_edit_clip(input_path, output_path, opts):
+        captured["opts"] = opts
+        return _fake_edit_clip(input_path, output_path, opts)
+
+    with patch("reel_toolkit.webapp.main.edit_clip", side_effect=capturing_edit_clip):
+        res = client.post(
+            "/api/process",
+            data={"cut_mode": "whole"},
+            files={"video": ("job.mp4", io.BytesIO(b"x"), "video/mp4")},
+        )
+    assert res.status_code == 200, res.text
+    assert captured["opts"].duck_original_audio_db == 0.0
+
+
 def test_process_combine_with_transitions_calls_stitcher():
     with patch.object(ffmpeg_utils, "require_ffmpeg"), \
          patch.object(ffmpeg_utils, "probe") as mock_probe, \

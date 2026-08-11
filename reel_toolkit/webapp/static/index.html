@@ -225,6 +225,10 @@
           <label>Music volume (dB) <span class="hint">more negative = quieter</span></label>
           <input type="number" id="musicVolume" value="-18" step="1">
         </div>
+        <div class="field">
+          <label>Original audio volume while music plays (dB) <span class="hint">0 = keep original audio at full volume alongside the music; negative lowers it, e.g. -6</span></label>
+          <input type="number" id="duckOriginalDb" value="0" step="1" max="0">
+        </div>
       </div>
     </div>
 
@@ -383,6 +387,7 @@
     form.append('max_duration', document.getElementById('maxDuration').value);
     form.append('watermark_position', document.getElementById('watermarkPosition').value);
     form.append('music_volume_db', document.getElementById('musicVolume').value);
+    form.append('duck_original_audio_db', document.getElementById('duckOriginalDb').value);
     form.append('auto_enhance', document.getElementById('autoEnhance').checked);
     form.append('saturation', document.getElementById('saturation').value);
     form.append('contrast', document.getElementById('contrast').value);

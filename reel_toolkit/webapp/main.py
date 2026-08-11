@@ -91,6 +91,7 @@ async def process(
     max_duration: float = Form(60.0),
     watermark_position: str = Form("bottom_right"),
     music_volume_db: float = Form(-18.0),
+    duck_original_audio_db: float = Form(0.0),  # lower original audio while music plays under it; 0 = full volume
     auto_enhance: bool = Form(True),          # analyze footage and auto-correct color -- no numbers needed by default
     saturation: float = Form(1.0),
     contrast: float = Form(1.0),
@@ -185,6 +186,7 @@ async def process(
             watermark=watermark_spec,
             music_path=str(music_path) if music_path else None,
             music_volume_db=music_volume_db,
+            duck_original_audio_db=duck_original_audio_db,
             auto_enhance=auto_enhance,
             saturation=saturation,
             contrast=contrast,
