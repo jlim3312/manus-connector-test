@@ -140,6 +140,27 @@ def test_split_video_calls_trim_per_cut_and_names_files(tmp_path):
     assert "02-reveal" in clips[1].path
 
 
+def test_build_trim_cmd_reencode_uses_accurate_seek_after_input():
+    """The default (fast_copy=False) path re-encodes, so -ss should go
+    *after* -i for frame-accurate, edit-list-safe seeking, with
+    -avoid_negative_ts to guard against the empty-output edge case seen
+    on some phone-recorded files. See ffmpeg_utils.build_trim_cmd docstring.
+    """
+    cmd = ffmpeg_utils.build_trim_cmd("in.mp4", "out.mp4", start=5.0, end=15.0, fast_copy=False)
+    assert cmd[1:3] == ["-y", "-i"]          # -i comes right after -y, before -ss
+    assert "-i" in cmd and "-ss" in cmd
+    assert cmd.index("-i") < cmd.index("-ss")
+    assert "-avoid_negative_ts" in cmd and cmd[cmd.index("-avoid_negative_ts") + 1] == "make_zero"
+
+
+def test_build_trim_cmd_fast_copy_uses_input_side_seek():
+    """fast_copy=True is the quick-preview path -- -ss stays *before* -i
+    for fast keyframe-snapped seeking (no re-encode happening anyway)."""
+    cmd = ffmpeg_utils.build_trim_cmd("in.mp4", "out.mp4", start=5.0, end=15.0, fast_copy=True)
+    assert cmd.index("-ss") < cmd.index("-i")
+    assert "-c" in cmd and cmd[cmd.index("-c") + 1] == "copy"
+
+
 def test_suggest_cuts_from_scenes_merges_short_segments():
     with patch.object(ffmpeg_utils, "require_ffmpeg"), \
          patch.object(ffmpeg_utils, "probe") as mock_probe, \

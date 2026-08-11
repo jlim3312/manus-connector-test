@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 
 from reel_toolkit import ffmpeg_utils, splitter
 from reel_toolkit.editor import edit_clip
-from reel_toolkit.models import CaptionSpec, CutSpec, EditOptions, WatermarkSpec
+from reel_toolkit.models import CaptionSpec, Clip, CutSpec, EditOptions, WatermarkSpec
 
 APP_DIR = Path(__file__).resolve().parent
 JOBS_DIR = APP_DIR / "jobs"
@@ -117,14 +117,19 @@ async def process(
     try:
         probe = ffmpeg_utils.probe(str(video_path))
 
-        if cut_mode == "auto":
-            cuts = splitter.auto_segments(probe.duration, segment_length=segment_seconds)
-        elif cut_mode == "manual":
-            cuts = parse_manual_cuts(manual_cuts)
+        if cut_mode == "whole":
+            # No cutting needed -- feed the upload straight into the edit
+            # pass instead of round-tripping it through an unnecessary
+            # trim/re-encode first (which also sidesteps a real-world
+            # ffmpeg edge case where certain phone-recorded files come out
+            # of a 0-to-full-duration trim with zero usable streams).
+            raw_clips = [Clip(path=str(video_path), label="full", duration=probe.duration, source=str(video_path))]
         else:
-            cuts = [CutSpec(start=0, end=probe.duration, label="full")]
-
-        raw_clips = splitter.split_video(str(video_path), cuts, str(cuts_dir))
+            if cut_mode == "auto":
+                cuts = splitter.auto_segments(probe.duration, segment_length=segment_seconds)
+            else:
+                cuts = parse_manual_cuts(manual_cuts)
+            raw_clips = splitter.split_video(str(video_path), cuts, str(cuts_dir))
 
         captions = []
         if caption_top.strip():

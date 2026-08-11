@@ -121,6 +121,30 @@ def test_process_whole_video_mode(mocked_ffmpeg):
     assert download.content == b"fake-mp4-bytes"
 
 
+def test_process_whole_video_mode_skips_the_trim_step():
+    """Regression test: 'whole video' mode used to round-trip the upload
+    through splitter.split_video (an unnecessary trim/re-encode) before
+    editing, which could produce a zero-stream intermediate file on some
+    real-world phone recordings. It should now feed the upload straight
+    into edit_clip instead.
+    """
+    with patch.object(ffmpeg_utils, "require_ffmpeg"), \
+         patch.object(ffmpeg_utils, "probe") as mock_probe, \
+         patch("reel_toolkit.webapp.main.splitter.split_video") as mock_split, \
+         patch("reel_toolkit.webapp.main.edit_clip", side_effect=_fake_edit_clip) as mock_edit:
+        mock_probe.return_value = ffmpeg_utils.ProbeResult(duration=12.0, width=1080, height=1920, has_audio=True)
+        res = client.post(
+            "/api/process",
+            data={"cut_mode": "whole"},
+            files={"video": ("job.mp4", io.BytesIO(b"fake video bytes"), "video/mp4")},
+        )
+    assert res.status_code == 200, res.text
+    mock_split.assert_not_called()
+    assert mock_edit.call_count == 1
+    input_path_arg = mock_edit.call_args[0][0]
+    assert input_path_arg.endswith("raw/job.mp4")
+
+
 def test_process_auto_segment_mode_produces_multiple_clips(mocked_ffmpeg):
     res = client.post(
         "/api/process",

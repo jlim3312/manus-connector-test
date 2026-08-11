@@ -114,17 +114,28 @@ def build_trim_cmd(
 ) -> List[str]:
     """Build an ffmpeg command that trims [start, end) out of input_path.
 
-    fast_copy=True uses stream copy (near-instant, but the cut may land up
-    to one keyframe early/late). fast_copy=False re-encodes for a frame
-    accurate cut, which is what you want once you're happy with the cut
-    points and are ready to publish.
+    fast_copy=True puts -ss *before* -i for fast, keyframe-snapped input
+    seeking (near-instant, good for quickly previewing candidate cuts, but
+    the cut may land up to one keyframe early/late and isn't reliable on
+    every source).
+
+    fast_copy=False (the default, used for the final re-encoded cut) puts
+    -ss *after* -i instead -- "accurate seek". It's slower (frames before
+    the cut point are decoded and discarded rather than skipped) but is
+    the ffmpeg-recommended way to get a frame-accurate trim, and avoids a
+    real-world edge case where input-side seeking on some phone-recorded
+    files (non-zero start_time / edit-list timestamps, common on iPhone
+    video) produces a "successful" but empty output with zero streams.
+    `-avoid_negative_ts make_zero` is added for the same reason -- it
+    resets timestamps that would otherwise go negative after the cut.
     """
     duration = end - start
-    cmd = ["ffmpeg", "-y", "-ss", f"{start:.3f}", "-i", input_path, "-t", f"{duration:.3f}"]
     if fast_copy and not extra_video_filters:
-        cmd += ["-c", "copy"]
+        cmd = ["ffmpeg", "-y", "-ss", f"{start:.3f}", "-i", input_path, "-t", f"{duration:.3f}", "-c", "copy"]
     else:
+        cmd = ["ffmpeg", "-y", "-i", input_path, "-ss", f"{start:.3f}", "-t", f"{duration:.3f}"]
         cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-c:a", "aac", "-b:a", "192k"]
+        cmd += ["-avoid_negative_ts", "make_zero"]
         if extra_video_filters:
             cmd += ["-vf", extra_video_filters]
     if extra_output_args:
