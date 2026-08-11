@@ -1,3 +1,8 @@
+> **This repo also contains an unrelated tool:** [`reel_toolkit/`](reel_toolkit/README.md)
+> cuts and edits raw shop footage into Instagram Reels (vertical crop,
+> captions, watermark, music) and includes a filming/scripting playbook for
+> an auto body shop's social media. See its own README for usage.
+
 # Suspension Damage Predictor
 
 Predicts **likely damaged or worn suspension components** from a wheel

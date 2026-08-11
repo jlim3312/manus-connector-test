@@ -1,0 +1,41 @@
+{
+  "source": "raw/2026-08-11-collision-repair.mp4",
+  "output_dir": "out/2026-08-11-collision-repair",
+
+  "cuts": [
+    { "start": "00:00", "end": "00:38", "label": "before-teardown" },
+    { "start": "00:38", "end": "01:15", "label": "bodywork-timelapse" },
+    { "start": "01:15", "end": "01:45", "label": "paint-booth" },
+    { "start": "01:45", "end": "02:10", "label": "reveal" }
+  ],
+
+  "edit": {
+    "fit_mode": "crop",
+    "max_duration": 60,
+    "fade_seconds": 0.4,
+    "normalize_loudness": true,
+    "watermark": {
+      "path": "assets/logo.png",
+      "position": "bottom_right",
+      "opacity": 0.85,
+      "scale_width_px": 200
+    },
+    "music_path": "assets/music/upbeat_bed.mp3",
+    "music_volume_db": -18
+  },
+
+  "clip_overrides": {
+    "before-teardown": {
+      "captions": [
+        { "text": "This bumper looked totaled...", "position": "top" },
+        { "text": "@yourshopname", "position": "bottom" }
+      ]
+    },
+    "reveal": {
+      "captions": [
+        { "text": "Back to factory finish ✨", "position": "top" },
+        { "text": "DM us for a free estimate", "position": "bottom" }
+      ]
+    }
+  }
+}
