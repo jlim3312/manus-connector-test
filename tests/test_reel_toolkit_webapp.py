@@ -196,6 +196,36 @@ def test_process_returns_500_when_ffmpeg_missing():
     assert "ffmpeg" in res.json()["detail"].lower()
 
 
+def test_process_rejects_upload_with_no_video_stream():
+    """A photo dropped in by mistake (e.g. a .jpeg) probes with width/height
+    0 -- reject it with a clear message instead of letting it reach ffmpeg's
+    encoder and blow up with a cryptic libx264 error.
+    """
+    with patch.object(ffmpeg_utils, "require_ffmpeg"), \
+         patch.object(ffmpeg_utils, "probe") as mock_probe:
+        mock_probe.return_value = ffmpeg_utils.ProbeResult(duration=0.04, width=0, height=0, has_audio=False)
+        res = client.post(
+            "/api/process",
+            data={"cut_mode": "whole"},
+            files={"video": ("photo.jpeg", io.BytesIO(b"x"), "image/jpeg")},
+        )
+    assert res.status_code == 400
+    assert "video track" in res.json()["detail"].lower()
+
+
+def test_process_rejects_upload_that_is_too_short():
+    with patch.object(ffmpeg_utils, "require_ffmpeg"), \
+         patch.object(ffmpeg_utils, "probe") as mock_probe:
+        mock_probe.return_value = ffmpeg_utils.ProbeResult(duration=0.04, width=323, height=576, has_audio=False)
+        res = client.post(
+            "/api/process",
+            data={"cut_mode": "whole"},
+            files={"video": ("photo.jpeg", io.BytesIO(b"x"), "image/jpeg")},
+        )
+    assert res.status_code == 400
+    assert "0.04s" in res.json()["detail"]
+
+
 def test_uploaded_filenames_are_sanitized(mocked_ffmpeg, tmp_path):
     res = client.post(
         "/api/process",

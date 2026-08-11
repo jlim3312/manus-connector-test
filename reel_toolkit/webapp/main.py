@@ -117,6 +117,19 @@ async def process(
     try:
         probe = ffmpeg_utils.probe(str(video_path))
 
+        if probe.width == 0 or probe.height == 0:
+            raise HTTPException(
+                400,
+                f"'{video.filename}' doesn't have a video track ffmpeg can read -- "
+                "make sure you're dropping a video file (.mp4, .mov, etc.), not a photo or other file type.",
+            )
+        if probe.duration < 0.5:
+            raise HTTPException(
+                400,
+                f"'{video.filename}' is only {probe.duration:.2f}s long, which usually means it's actually a "
+                "photo (not a video) or the file didn't upload correctly. Please drop an actual video file.",
+            )
+
         if cut_mode == "whole":
             # No cutting needed -- feed the upload straight into the edit
             # pass instead of round-tripping it through an unnecessary
